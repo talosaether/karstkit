@@ -1,0 +1,119 @@
+admin:
+  address:
+    socket_address:
+      address: 127.0.0.1
+      port_value: {{ envoy_metrics_port | default(9901) }}
+
+static_resources:
+  listeners:
+  - name: grpc_listener
+    address:
+      socket_address:
+        address: 0.0.0.0
+        port_value: {{ envoy_inbound_port | default(15000) }}
+    filter_chains:
+    - filters:
+      - name: envoy.filters.network.http_connection_manager
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+          stat_prefix: grpc
+          codec_type: AUTO
+          route_config:
+            name: local_route
+            virtual_hosts:
+            - name: local_service
+              domains: ["*"]
+              routes:
+              - match:
+                  prefix: "/"
+                route:
+                  cluster: app_service
+                  timeout: 0s
+                  max_stream_duration:
+                    grpc_timeout_header_max: 0s
+          http_filters:
+          - name: envoy.filters.http.grpc_web
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.http.grpc_web.v3.GrpcWeb
+          - name: envoy.filters.http.cors
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.http.cors.v3.Cors
+          - name: envoy.filters.http.router
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+          access_log:
+          - name: envoy.access_loggers.stdout
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.access_loggers.stream.v3.StdoutAccessLog
+      transport_socket:
+        name: envoy.transport_sockets.tls
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
+          common_tls_context:
+            tls_certificates:
+            - certificate_chain:
+                filename: "/etc/envoy/certs/tls.crt"
+              private_key:
+                filename: "/etc/envoy/certs/tls.key"
+            validation_context:
+              trusted_ca:
+                filename: "/etc/envoy/certs/ca.crt"
+              verify_certificate_spki:
+              - "{{ service_name }}"
+            alpn_protocols:
+            - "h2"
+            require_client_certificate: true
+
+  clusters:
+  - name: app_service
+    connect_timeout: 0.25s
+    type: STRICT_DNS
+    lb_policy: ROUND_ROBIN
+    http2_protocol_options: {}
+    load_assignment:
+      cluster_name: app_service
+      endpoints:
+      - lb_endpoints:
+        - endpoint:
+            address:
+              socket_address:
+                address: {{ service_name }}
+                port_value: {{ grpc_port | default(50051) }}
+    transport_socket:
+      name: envoy.transport_sockets.tls
+      typed_config:
+        "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext
+        common_tls_context:
+          tls_certificates:
+          - certificate_chain:
+              filename: "/etc/envoy/certs/tls.crt"
+            private_key:
+              filename: "/etc/envoy/certs/tls.key"
+          validation_context:
+            trusted_ca:
+              filename: "/etc/envoy/certs/ca.crt"
+          alpn_protocols:
+          - "h2"
+          require_client_certificate: true
+
+  # Stats configuration
+  - name: stats
+    connect_timeout: 0.25s
+    type: STATIC
+    lb_policy: ROUND_ROBIN
+    load_assignment:
+      cluster_name: stats
+      endpoints:
+      - lb_endpoints:
+        - endpoint:
+            address:
+              socket_address:
+                address: 127.0.0.1
+                port_value: {{ envoy_metrics_port | default(9901) }}
+
+# Stats configuration
+stats_config:
+  use_all_default_tags: true
+  stats_tags:
+  - tag_name: service_name
+    fixed_value: {{ service_name }}
