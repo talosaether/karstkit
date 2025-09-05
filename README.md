@@ -1,5 +1,130 @@
 # KarstKit
-Description: An IaC wrapper that spelunks repo slugs, spins up Dockerized services with mTLS
+
+An Infrastructure-as-Code (IaC) deployment wrapper that spelunks repository slugs, spins up Dockerized services with mTLS, and executes Python applications in a secure service mesh.
+
+## 🚀 Quick Start
+
+```bash
+# One-command setup and deployment
+cp .env.example .env
+make bootstrap
+make plan && make apply
+iac deploy --file repos.yaml
+```
+
+## 📋 How It Works
+
+### Repository Slug Detection
+
+KarstKit supports multiple repository formats:
+- `gh:owner/repo` - GitHub repository
+- `gh:owner/repo#branch` - Specific branch or tag
+- `gl:owner/repo` - GitLab repository
+- `bb:owner/repo` - Bitbucket repository
+
+The system automatically detects the repository type and fetches the source code using the most efficient method (tarball download preferred, shallow clone fallback).
+
+### Main() Function Resolution
+
+KarstKit intelligently detects Python entrypoints in this order:
+
+1. **Console Scripts**: Checks `pyproject.toml` for `[project.scripts]` and uses the first one
+2. **Package Main**: Looks for `{package}/__main__.py`
+3. **Root Main**: Searches for `main.py` or `__main__.py` at repository root
+4. **App Structure**: Detects `app.py`, `app/__main__.py`, or `src/{package}/__main__.py`
+5. **Function Detection**: Scans Python files for `def main(` or `if __name__ == "__main__"`
+
+### Overriding Entrypoints
+
+You can override the detected entrypoint using Docker labels:
+
+```dockerfile
+# In your Dockerfile
+LABEL ENTRYPOINT="custom.module:main_function"
+```
+
+Or via environment variable:
+```bash
+export ENTRYPOINT="myapp.cli:start"
+```
+
+## 📊 Observability
+
+### Envoy Statistics
+
+View Envoy metrics and statistics:
+```bash
+# Access Envoy admin interface (per service)
+curl http://localhost:9901/stats
+
+# View service-specific metrics
+curl http://localhost:9901/stats?filter=service_name
+```
+
+### Application Logs
+
+Stream logs from deployed services:
+```bash
+# Stream all service logs
+iac logs
+
+# Stream specific service logs
+iac logs --service my-service
+
+# Follow logs in real-time
+iac logs --follow
+```
+
+### OpenTelemetry Configuration
+
+Set custom OTLP endpoint for distributed tracing:
+```bash
+export OTEL_EXPORTER_OTLP_ENDPOINT="https://your-otel-collector:4317"
+export OTEL_SERVICE_NAME="karstkit-service"
+```
+
+View traces in your OpenTelemetry-compatible backend (Jaeger, Zipkin, etc.).
+
+## 🔒 Security & PKI
+
+### Current: Self-Signed CA
+
+KarstKit generates a development CA automatically:
+- CA certificate: `./secrets/ca.pem`
+- CA private key: `./secrets/ca.key`
+- Service certificates: `./secrets/{service-name}.{crt,key}`
+
+### Production: Real PKI Integration
+
+To replace the self-signed CA with a production PKI:
+
+1. **Replace CA files**:
+   ```bash
+   # Copy your CA certificate and key
+   cp /path/to/prod-ca.pem ./secrets/ca.pem
+   cp /path/to/prod-ca.key ./secrets/ca.key
+   ```
+
+2. **Update certificate generation** in `iac_wrapper/envoy.py`:
+   ```python
+   # Modify the certificate generation logic to use your PKI
+   # instead of the self-signed CA generation
+   ```
+
+3. **Configure service certificates**:
+   - Ensure each service has a valid certificate from your PKI
+   - Update the certificate paths in Envoy configuration
+   - Verify certificate chain and trust relationships
+
+## ⚠️ Limitations
+
+- **Single Docker Network**: All services run on the `iacnet` network
+- **Development CA**: Default self-signed certificates for development only
+- **Local Storage**: Repository cache and certificates stored locally
+- **No High Availability**: Single control plane instance
+- **Python Focus**: Optimized for Python applications (other languages supported via `/app/main`)
+
+## 🛠️ Architecture
 
 Prompt:
 SYSTEM
