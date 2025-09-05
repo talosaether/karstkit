@@ -1,0 +1,18 @@
+# Example repository slugs for deployment
+# Format: scheme:owner/repo[#ref]
+# Supported schemes: gh (GitHub), gl (GitLab)
+
+# Simple Flask application
+- gh:octocat/Hello-World
+
+# Python package with specific version
+- gh:psf/requests#v2.31.0
+
+# GitLab repository example
+- gl:gitlab-org/gitlab-runner#v16.0.0
+
+# Repository with custom branch
+- gh:microsoft/vscode#main
+
+# Another example
+- gh:facebook/react#v18.2.0

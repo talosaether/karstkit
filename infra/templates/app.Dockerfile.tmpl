@@ -1,0 +1,126 @@
+FROM python:3.11-slim
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV GRPC_PORT={{ grpc_port | default(50051) }}
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    git \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user
+RUN groupadd -r appuser && useradd -r -g appuser appuser
+
+# Set working directory
+WORKDIR /app
+
+# Copy application code
+COPY . /app/
+
+# Install Python dependencies if requirements.txt exists
+RUN if [ -f requirements.txt ]; then pip install --no-cache-dir -r requirements.txt; fi
+
+# Install OpenTelemetry SDK
+RUN pip install --no-cache-dir \
+    opentelemetry-sdk \
+    opentelemetry-exporter-otlp \
+    opentelemetry-instrumentation-grpc \
+    grpcio \
+    grpcio-tools
+
+# Create gRPC server script
+RUN echo '#!/usr/bin/env python3\n\
+import os\n\
+import sys\n\
+import grpc\n\
+import threading\n\
+import time\n\
+from concurrent import futures\n\
+from opentelemetry import trace\n\
+from opentelemetry.sdk.trace import TracerProvider\n\
+from opentelemetry.sdk.trace.export import ConsoleSpanExporter\n\
+from opentelemetry.instrumentation.grpc import GrpcInstrumentorServer\n\
+\n\
+# Initialize OpenTelemetry\n\
+trace.set_tracer_provider(TracerProvider())\n\
+trace.get_tracer_provider().add_span_processor(\n\
+    ConsoleSpanExporter()\n\
+)\n\
+\n\
+# Instrument gRPC\n\
+GrpcInstrumentorServer().instrument()\n\
+\n\
+# Simple gRPC server for health checks\n\
+class HealthServicer:\n\
+    def HealthCheck(self, request, context):\n\
+        from google.protobuf import empty_pb2\n\
+        from google.protobuf import timestamp_pb2\n\
+        \n\
+        # Create a simple health status response\n\
+        status = 1  # SERVING\n\
+        message = "Service is healthy"\n\
+        timestamp = timestamp_pb2.Timestamp()\n\
+        timestamp.GetCurrentTime()\n\
+        \n\
+        # Return a simple response\n\
+        return type("HealthStatus", (), {\n\
+            "status": status,\n\
+            "message": message,\n\
+            "timestamp": timestamp\n\
+        })()\n\
+\n\
+def serve():\n\
+    server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))\n\
+    \n\
+    # Add health service\n\
+    health_servicer = HealthServicer()\n\
+    # Note: In a real implementation, you would add the service properly\n\
+    \n\
+    port = os.environ.get("GRPC_PORT", "50051")\n\
+    server.add_insecure_port(f"[::]:{port}")\n\
+    \n\
+    server.start()\n\
+    print(f"gRPC server started on port {port}")\n\
+    \n\
+    try:\n\
+        server.wait_for_termination()\n\
+    except KeyboardInterrupt:\n\
+        server.stop(0)\n\
+\n\
+if __name__ == "__main__":\n\
+    try:\n\
+        # Start gRPC server in background\n\
+        grpc_thread = threading.Thread(target=serve, daemon=True)\n\
+        grpc_thread.start()\n\
+        \n\
+        # Wait a moment for server to start\n\
+        time.sleep(1)\n\
+        \n\
+        # Run the main application\n\
+        {{ entrypoint | default("main.main()") }}\n\
+    except Exception as e:\n\
+        print(f"Error starting application: {e}", file=sys.stderr)\n\
+        sys.exit(1)\n\
+' > /app/grpc_server.py
+
+# Make the script executable
+RUN chmod +x /app/grpc_server.py
+
+# Change ownership to non-root user
+RUN chown -R appuser:appuser /app
+
+# Switch to non-root user
+USER appuser
+
+# Expose gRPC port
+EXPOSE {{ grpc_port | default(50051) }}
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:{{ grpc_port | default(50051) }}/health || exit 1
+
+# Default command
+CMD ["python", "/app/grpc_server.py"]
