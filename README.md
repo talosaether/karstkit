@@ -4,6 +4,18 @@ An Infrastructure-as-Code (IaC) deployment wrapper that spelunks repository slug
 
 ## 🚀 Quick Start
 
+### Prerequisites (Ubuntu/Debian)
+
+Install build dependencies to avoid cryptography compilation issues:
+
+```bash
+# Install system dependencies
+sudo apt update
+sudo apt install -y build-essential libssl-dev libffi-dev python3-dev
+```
+
+### Setup and Deployment
+
 ```bash
 # One-command setup and deployment
 cp .env.example .env
