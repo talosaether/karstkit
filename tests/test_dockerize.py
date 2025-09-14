@@ -1,6 +1,7 @@
 """Tests for Docker operations functionality."""
 
 import pytest
+import time
 from pathlib import Path
 from unittest.mock import Mock, patch, mock_open
 from iac_wrapper.dockerize import DockerOps
@@ -337,3 +338,221 @@ class TestDockerOps:
         assert "FROM python:3.11-slim" in result
         assert "custom.main" in result
         assert str(mock_config.GRPC_PORT) in result
+
+
+class TestEnvoyStartupOrdering:
+    """Test Envoy startup ordering functionality."""
+
+    @patch("requests.get")
+    @patch("subprocess.run")
+    def test_wait_for_envoy_ready_success(self, mock_run, mock_requests, mock_config):
+        """Test successful Envoy readiness check."""
+        docker_ops = DockerOps()
+
+        # Mock container running check
+        mock_run.side_effect = [
+            # First call: container running check returns True
+            Mock(returncode=0, stdout="test-service-envoy\n"),
+            # Second call: get container IP
+            Mock(returncode=0, stdout="172.20.0.10\n"),
+        ]
+
+        # Mock successful readiness check
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_requests.return_value = mock_response
+
+        result = docker_ops.wait_for_envoy_ready("test-service", timeout=5)
+
+        assert result is True
+        mock_requests.assert_called_with(
+            f"http://172.20.0.10:{mock_config.ENVOY_METRICS_PORT}/ready", timeout=2
+        )
+
+    @patch("requests.get")
+    @patch("subprocess.run")
+    @patch("time.sleep")
+    def test_wait_for_envoy_ready_timeout(
+        self, mock_sleep, mock_run, mock_requests, mock_config
+    ):
+        """Test Envoy readiness check timeout."""
+        docker_ops = DockerOps()
+
+        # Mock container not running
+        mock_run.return_value = Mock(returncode=0, stdout="")
+
+        # Mock sleep to speed up test
+        mock_sleep.return_value = None
+
+        result = docker_ops.wait_for_envoy_ready("test-service", timeout=1)
+
+        assert result is False
+
+    @patch("iac_wrapper.dockerize.DockerOps.container_running")
+    @patch("requests.get")
+    @patch("subprocess.run")
+    @patch("time.sleep")
+    def test_wait_for_envoy_ready_http_error(
+        self, mock_sleep, mock_run, mock_requests, mock_container_running, mock_config
+    ):
+        """Test Envoy readiness check with HTTP error."""
+        docker_ops = DockerOps()
+
+        # Mock container running
+        mock_container_running.return_value = True
+
+        # Mock IP retrieval
+        mock_run.return_value = Mock(returncode=0, stdout="172.20.0.10\n")
+
+        # Mock HTTP error
+        mock_requests.side_effect = Exception("Connection error")
+
+        result = docker_ops.wait_for_envoy_ready("test-service", timeout=1)
+
+        assert result is False
+
+    @patch("iac_wrapper.dockerize.DockerOps.run_container")
+    @patch("iac_wrapper.dockerize.DockerOps.run_envoy_sidecar")
+    @patch("iac_wrapper.dockerize.DockerOps.wait_for_envoy_ready")
+    @patch("iac_wrapper.dockerize.DockerOps.container_exists")
+    @patch("iac_wrapper.dockerize.DockerOps.stop_container")
+    @patch("iac_wrapper.dockerize.DockerOps.remove_container")
+    def test_start_service_with_envoy_success(
+        self,
+        mock_remove,
+        mock_stop,
+        mock_exists,
+        mock_wait_ready,
+        mock_run_envoy,
+        mock_run_container,
+        mock_config,
+    ):
+        """Test successful service start with Envoy."""
+        docker_ops = DockerOps()
+
+        # Setup mocks
+        mock_exists.return_value = False  # No existing containers
+        mock_wait_ready.return_value = True  # Envoy becomes ready
+        mock_run_envoy.return_value = "envoy123"
+        mock_run_container.return_value = "app456"
+
+        app_id, envoy_id = docker_ops.start_service_with_envoy(
+            "test-image:latest",
+            "test-service",
+            "envoy config content",
+            environment={"TEST": "value"},
+        )
+
+        assert app_id == "app456"
+        assert envoy_id == "envoy123"
+
+        # Verify order: Envoy started first, then app
+        assert mock_run_envoy.call_count == 1
+        assert mock_run_container.call_count == 1
+        assert mock_wait_ready.call_count == 1
+
+    @patch("iac_wrapper.dockerize.DockerOps.run_envoy_sidecar")
+    @patch("iac_wrapper.dockerize.DockerOps.wait_for_envoy_ready")
+    @patch("iac_wrapper.dockerize.DockerOps.container_exists")
+    @patch("iac_wrapper.dockerize.DockerOps.stop_container")
+    @patch("iac_wrapper.dockerize.DockerOps.remove_container")
+    def test_start_service_with_envoy_envoy_not_ready(
+        self,
+        mock_remove,
+        mock_stop,
+        mock_exists,
+        mock_wait_ready,
+        mock_run_envoy,
+        mock_config,
+    ):
+        """Test service start failure when Envoy doesn't become ready."""
+        docker_ops = DockerOps()
+
+        # Setup mocks
+        mock_exists.return_value = False
+        mock_wait_ready.return_value = False  # Envoy fails to become ready
+        mock_run_envoy.return_value = "envoy123"
+
+        with pytest.raises(RuntimeError) as exc_info:
+            docker_ops.start_service_with_envoy(
+                "test-image:latest", "test-service", "envoy config content"
+            )
+
+        assert "failed to become ready" in str(exc_info.value)
+        # Verify cleanup was called
+        assert mock_stop.call_count == 1
+        assert mock_remove.call_count == 1
+
+    @patch("iac_wrapper.dockerize.DockerOps.run_container")
+    @patch("iac_wrapper.dockerize.DockerOps.run_envoy_sidecar")
+    @patch("iac_wrapper.dockerize.DockerOps.wait_for_envoy_ready")
+    @patch("iac_wrapper.dockerize.DockerOps.container_exists")
+    @patch("iac_wrapper.dockerize.DockerOps.stop_container")
+    @patch("iac_wrapper.dockerize.DockerOps.remove_container")
+    def test_start_service_with_envoy_app_failure(
+        self,
+        mock_remove,
+        mock_stop,
+        mock_exists,
+        mock_wait_ready,
+        mock_run_envoy,
+        mock_run_container,
+        mock_config,
+    ):
+        """Test cleanup when app container fails to start."""
+        docker_ops = DockerOps()
+
+        # Setup mocks
+        mock_exists.return_value = False
+        mock_wait_ready.return_value = True
+        mock_run_envoy.return_value = "envoy123"
+        mock_run_container.side_effect = Exception("App start failed")
+
+        with pytest.raises(Exception) as exc_info:
+            docker_ops.start_service_with_envoy(
+                "test-image:latest", "test-service", "envoy config content"
+            )
+
+        assert "App start failed" in str(exc_info.value)
+        # Verify Envoy cleanup was called
+        assert mock_stop.call_count == 1
+        assert mock_remove.call_count == 1
+
+    @patch("iac_wrapper.dockerize.DockerOps.container_exists")
+    @patch("iac_wrapper.dockerize.DockerOps.stop_container")
+    @patch("iac_wrapper.dockerize.DockerOps.remove_container")
+    @patch("iac_wrapper.dockerize.DockerOps.run_envoy_sidecar")
+    @patch("iac_wrapper.dockerize.DockerOps.wait_for_envoy_ready")
+    @patch("iac_wrapper.dockerize.DockerOps.run_container")
+    def test_start_service_with_envoy_cleanup_existing(
+        self,
+        mock_run_container,
+        mock_wait_ready,
+        mock_run_envoy,
+        mock_remove,
+        mock_stop,
+        mock_exists,
+        mock_config,
+    ):
+        """Test cleanup of existing containers before starting new ones."""
+        docker_ops = DockerOps()
+
+        # Mock existing containers
+        mock_exists.side_effect = [True, True]  # Both containers exist
+        mock_wait_ready.return_value = True
+        mock_run_envoy.return_value = "envoy123"
+        mock_run_container.return_value = "app456"
+
+        docker_ops.start_service_with_envoy(
+            "test-image:latest", "test-service", "envoy config content"
+        )
+
+        # Verify cleanup was called for both containers
+        assert mock_stop.call_count == 2  # Stop both app and envoy
+        assert mock_remove.call_count == 2  # Remove both app and envoy
+
+        # Verify expected calls for service and envoy containers
+        mock_stop.assert_any_call("test-service")
+        mock_stop.assert_any_call("test-service-envoy")
+        mock_remove.assert_any_call("test-service")
+        mock_remove.assert_any_call("test-service-envoy")

@@ -3,8 +3,10 @@
 import os
 import tempfile
 import subprocess
+import time
+import requests
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Optional, Tuple
 from jinja2 import Template
 from .config import config
 from .slug import RepoSlug
@@ -266,3 +268,106 @@ class DockerOps:
         ]
         result = subprocess.run(cmd, capture_output=True, text=True)
         return container_name in result.stdout.strip().split("\n")
+
+    def wait_for_envoy_ready(self, service_name: str, timeout: int = 30) -> bool:
+        """Wait for Envoy sidecar to be ready.
+
+        Args:
+            service_name: Name of the service
+            timeout: Timeout in seconds
+
+        Returns:
+            True if Envoy is ready, False if timeout
+        """
+        envoy_container_name = f"{service_name}-envoy"
+        start_time = time.time()
+
+        while time.time() - start_time < timeout:
+            # First check if container is running
+            if not self.container_running(envoy_container_name):
+                time.sleep(1)
+                continue
+
+            # Check Envoy admin endpoint for readiness
+            try:
+                # Get container IP address
+                cmd = [
+                    "docker",
+                    "inspect",
+                    "-f",
+                    "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}",
+                    envoy_container_name,
+                ]
+                result = subprocess.run(cmd, capture_output=True, text=True)
+                if result.returncode != 0:
+                    time.sleep(1)
+                    continue
+
+                container_ip = result.stdout.strip()
+                if not container_ip:
+                    time.sleep(1)
+                    continue
+
+                # Check readiness via admin endpoint
+                response = requests.get(
+                    f"http://{container_ip}:{config.ENVOY_METRICS_PORT}/ready",
+                    timeout=2,
+                )
+                if response.status_code == 200:
+                    return True
+
+            except (requests.exceptions.RequestException, Exception):
+                pass
+
+            time.sleep(1)
+
+        return False
+
+    def start_service_with_envoy(
+        self, image_name: str, service_name: str, envoy_config: str, **kwargs
+    ) -> Tuple[str, str]:
+        """Start a service with its Envoy sidecar in the correct order.
+
+        Args:
+            image_name: Docker image name for the service
+            service_name: Name of the service
+            envoy_config: Envoy configuration content
+            **kwargs: Additional container options
+
+        Returns:
+            Tuple of (app_container_id, envoy_container_id)
+
+        Raises:
+            RuntimeError: If Envoy fails to start or become ready
+        """
+        # Clean up any existing containers
+        if self.container_exists(service_name):
+            self.stop_container(service_name)
+            self.remove_container(service_name)
+
+        if self.container_exists(f"{service_name}-envoy"):
+            self.stop_container(f"{service_name}-envoy")
+            self.remove_container(f"{service_name}-envoy")
+
+        # Step 1: Start Envoy sidecar first
+        envoy_container_id = self.run_envoy_sidecar(service_name, envoy_config)
+
+        # Step 2: Wait for Envoy to be ready
+        if not self.wait_for_envoy_ready(service_name):
+            # Clean up failed Envoy container
+            self.stop_container(f"{service_name}-envoy")
+            self.remove_container(f"{service_name}-envoy")
+            raise RuntimeError(
+                f"Envoy sidecar for {service_name} failed to become ready"
+            )
+
+        try:
+            # Step 3: Start the application container
+            app_container_id = self.run_container(image_name, service_name, **kwargs)
+            return app_container_id, envoy_container_id
+
+        except Exception as e:
+            # If app container fails to start, clean up Envoy
+            self.stop_container(f"{service_name}-envoy")
+            self.remove_container(f"{service_name}-envoy")
+            raise e

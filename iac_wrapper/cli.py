@@ -114,30 +114,26 @@ def deploy(file_path: Optional[str], slugs: tuple, wait: bool, timeout: int):
                 click.echo(f"  Configuring Envoy...")
                 envoy_config_content = envoy_config.generate_config(service_name)
 
-                click.echo(f"  Starting containers...")
+                click.echo(f"  Starting containers (Envoy first, then app)...")
 
-                # Stop existing containers if they exist
-                if docker_ops.container_exists(service_name):
-                    docker_ops.stop_container(service_name)
-                    docker_ops.remove_container(service_name)
-
-                if docker_ops.container_exists(f"{service_name}-envoy"):
-                    docker_ops.stop_container(f"{service_name}-envoy")
-                    docker_ops.remove_container(f"{service_name}-envoy")
-
-                # Start new containers
-                container_id = docker_ops.run_container(
-                    image_name,
-                    service_name,
-                    environment={
-                        "OTEL_EXPORTER_OTLP_ENDPOINT": config.OTEL_EXPORTER_OTLP_ENDPOINT,
-                        "GRPC_PORT": str(config.GRPC_PORT),
-                    },
-                )
-
-                envoy_container_id = docker_ops.run_envoy_sidecar(
-                    service_name, envoy_config_content
-                )
+                # Start service with Envoy in correct order (Envoy first, then app)
+                try:
+                    (
+                        container_id,
+                        envoy_container_id,
+                    ) = docker_ops.start_service_with_envoy(
+                        image_name,
+                        service_name,
+                        envoy_config_content,
+                        environment={
+                            "OTEL_EXPORTER_OTLP_ENDPOINT": config.OTEL_EXPORTER_OTLP_ENDPOINT,
+                            "GRPC_PORT": str(config.GRPC_PORT),
+                        },
+                    )
+                    click.echo(f"  ✅ Service {service_name} started successfully")
+                except RuntimeError as e:
+                    click.echo(f"  ❌ Failed to start {service_name}: {e}", err=True)
+                    continue
 
                 # Check health if requested
                 health_status = None

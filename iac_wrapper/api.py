@@ -96,28 +96,24 @@ def create_app() -> Flask:
                         # Run containers
                         yield f"data: {json.dumps({'step': i+1, 'total': len(slugs), 'slug': slug_str, 'status': 'starting_containers'})}\n\n"
 
-                        # Stop existing containers if they exist
-                        if docker_ops.container_exists(service_name):
-                            docker_ops.stop_container(service_name)
-                            docker_ops.remove_container(service_name)
-
-                        if docker_ops.container_exists(f"{service_name}-envoy"):
-                            docker_ops.stop_container(f"{service_name}-envoy")
-                            docker_ops.remove_container(f"{service_name}-envoy")
-
-                        # Start new containers
-                        container_id = docker_ops.run_container(
-                            image_name,
-                            service_name,
-                            environment={
-                                "OTEL_EXPORTER_OTLP_ENDPOINT": config.OTEL_EXPORTER_OTLP_ENDPOINT,
-                                "GRPC_PORT": str(config.GRPC_PORT),
-                            },
-                        )
-
-                        envoy_container_id = docker_ops.run_envoy_sidecar(
-                            service_name, envoy_config_content
-                        )
+                        # Start service with Envoy in correct order (Envoy first, then app)
+                        try:
+                            (
+                                container_id,
+                                envoy_container_id,
+                            ) = docker_ops.start_service_with_envoy(
+                                image_name,
+                                service_name,
+                                envoy_config_content,
+                                environment={
+                                    "OTEL_EXPORTER_OTLP_ENDPOINT": config.OTEL_EXPORTER_OTLP_ENDPOINT,
+                                    "GRPC_PORT": str(config.GRPC_PORT),
+                                },
+                            )
+                            yield f"data: {json.dumps({'step': i+1, 'total': len(slugs), 'slug': slug_str, 'status': 'started'})}\n\n"
+                        except RuntimeError as e:
+                            yield f"data: {json.dumps({'step': i+1, 'total': len(slugs), 'slug': slug_str, 'status': 'error', 'message': str(e)})}\n\n"
+                            continue
 
                         # Check health if requested
                         health_status = None
