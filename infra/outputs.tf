@@ -1,7 +1,7 @@
 
 output "network_subnet" {
   description = "Subnet of the created Docker network"
-  value       = docker_network.iac_network.ipam_config[0].subnet
+  value       = tolist(docker_network.iac_network.ipam_config)[0].subnet
 }
 
 output "deployed_services" {

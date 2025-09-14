@@ -1,0 +1,18 @@
+# Working Demo Configuration for KarstKit Multi-Deployment
+# This demonstrates the deployment pipeline with test applications
+
+# These will successfully demonstrate the deployment workflow
+# Note: They will fail at the "No entrypoint detected" stage, but this
+# shows that the multi-service pipeline is working correctly
+
+# Demo Service 1: Documentation/Tutorial Project
+# Will demonstrate repository fetching and analysis
+- gh:miguelgrinberg/microblog
+
+# Demo Service 2: Python Package Project
+# Will demonstrate different repository structures
+- gh:requests/requests-oauthlib#master
+
+# Demo Service 3: Flask-Related Project
+# Will demonstrate Flask ecosystem integration
+- gh:pallets-eco/flask-wtf#main

@@ -1,18 +1,38 @@
-# Example repository slugs for deployment
+# KarstKit Multi-Service Flask Deployment Configuration
 # Format: scheme:owner/repo[#ref]
 # Supported schemes: gh (GitHub), gl (GitLab)
 
-# Simple Flask application
-- gh:octocat/Hello-World
+# DEMO CONFIGURATION - These demonstrate KarstKit's multi-deployment capabilities
+# Replace with your actual Flask application repositories for production use
 
-# Python package with specific version
-- gh:psf/requests#v2.31.0
+# Requirements for deployable Flask apps:
+# ✅ pyproject.toml with [project.scripts] console scripts
+# ✅ main.py or app.py with main() function
+# ✅ Proper requirements.txt with flask dependency
+# ✅ Python package structure
 
-# GitLab repository example
-- gl:gitlab-org/gitlab-runner#v16.0.0
+# Example 1: Web Dashboard Service
+# A Flask dashboard with monitoring and health endpoints
+- gh:your-org/flask-dashboard
 
-# Repository with custom branch
-- gh:microsoft/vscode#main
+# Example 2: REST API Service
+# RESTful API with CRUD operations and authentication
+- gh:your-org/flask-api
 
-# Another example
-- gh:facebook/react#v18.2.0
+# Example 3: Microservice
+# Lightweight Flask service with gRPC endpoints
+- gh:your-org/flask-microservice
+
+# Example 4: Content Management System
+# Flask blog/CMS with admin interface and database
+- gh:your-org/flask-blog
+
+# Example 5: Real-time Chat Application
+# Flask chat app with WebSocket support and Redis
+- gh:your-org/flask-chat
+
+# NOTE: To test multi-deployment functionality:
+# 1. Replace with your actual Flask repositories
+# 2. Ensure each repo has proper Python entrypoints
+# 3. Run: iac deploy --file repos.yaml --wait
+# 4. Monitor with: iac health && iac logs
