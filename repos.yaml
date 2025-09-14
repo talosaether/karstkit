@@ -2,37 +2,40 @@
 # Format: scheme:owner/repo[#ref]
 # Supported schemes: gh (GitHub), gl (GitLab)
 
-# DEMO CONFIGURATION - These demonstrate KarstKit's multi-deployment capabilities
-# Replace with your actual Flask application repositories for production use
-
+# PRODUCTION EXAMPLES - Replace with your actual Flask applications
 # Requirements for deployable Flask apps:
 # ✅ pyproject.toml with [project.scripts] console scripts
 # ✅ main.py or app.py with main() function
 # ✅ Proper requirements.txt with flask dependency
 # ✅ Python package structure
 
-# Example 1: Web Dashboard Service
-# A Flask dashboard with monitoring and health endpoints
-- gh:your-org/flask-dashboard
+# Production Flask Services (replace with your repositories)
+- gh:your-org/flask-dashboard    # Web dashboard with monitoring endpoints
+- gh:your-org/flask-api         # REST API with CRUD operations
+- gh:your-org/flask-microservice # Lightweight service with gRPC
+- gh:your-org/flask-blog        # CMS with admin interface
+- gh:your-org/flask-chat        # Real-time chat with WebSocket
 
-# Example 2: REST API Service
-# RESTful API with CRUD operations and authentication
-- gh:your-org/flask-api
+# ─────────────────────────────────────────────────────────────────
+# DEMO CONFIGURATION (for testing deployment pipeline)
+# Uncomment to test multi-service deployment functionality
+# These will demonstrate the pipeline but fail at entrypoint detection
 
-# Example 3: Microservice
-# Lightweight Flask service with gRPC endpoints
-- gh:your-org/flask-microservice
+# Demo repositories for testing (remove # to activate)
+# - gh:miguelgrinberg/microblog           # Flask tutorial project
+# - gh:requests/requests-oauthlib#master  # Python package structure
+# - gh:pallets-eco/flask-wtf#main         # Flask ecosystem integration
 
-# Example 4: Content Management System
-# Flask blog/CMS with admin interface and database
-- gh:your-org/flask-blog
-
-# Example 5: Real-time Chat Application
-# Flask chat app with WebSocket support and Redis
-- gh:your-org/flask-chat
-
-# NOTE: To test multi-deployment functionality:
-# 1. Replace with your actual Flask repositories
+# ─────────────────────────────────────────────────────────────────
+# USAGE INSTRUCTIONS
+#
+# For Production:
+# 1. Replace gh:your-org/* with your actual Flask repositories
 # 2. Ensure each repo has proper Python entrypoints
-# 3. Run: iac deploy --file repos.yaml --wait
-# 4. Monitor with: iac health && iac logs
+# 3. Deploy: iac deploy --file repos.yaml --wait
+# 4. Monitor: iac health && iac logs
+#
+# For Testing Pipeline:
+# 1. Uncomment demo repositories above
+# 2. Run: iac deploy --file repos.yaml
+# 3. Observe multi-service processing (will show "No entrypoint detected")
