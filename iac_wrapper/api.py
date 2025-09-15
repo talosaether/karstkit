@@ -61,7 +61,13 @@ def create_app() -> Flask:
                         slug = parse_slug(slug_str)
                         service_name = slug.service_name
 
-                        yield f"data: {json.dumps({'step': i+1, 'total': len(slugs), 'slug': slug_str, 'status': 'parsing'})}\n\n"
+                        step_data = {
+                            'step': i+1,
+                            'total': len(slugs),
+                            'slug': slug_str,
+                            'status': 'parsing'
+                        }
+                        yield f"data: {json.dumps(step_data)}\n\n"
 
                         # Fetch repository
                         yield f"data: {json.dumps({'step': i+1, 'total': len(slugs), 'slug': slug_str, 'status': 'fetching'})}\n\n"
@@ -93,6 +99,12 @@ def create_app() -> Flask:
                             service_name
                         )
 
+                        # Detect and generate port mappings
+                        yield f"data: {json.dumps({'step': i+1, 'total': len(slugs), 'slug': slug_str, 'status': 'detecting_ports'})}\n\n"
+                        port_mappings = docker_ops.generate_port_mappings(
+                            repo_path, entrypoint, service_name
+                        )
+
                         # Run containers
                         yield f"data: {json.dumps({'step': i+1, 'total': len(slugs), 'slug': slug_str, 'status': 'starting_containers'})}\n\n"
 
@@ -109,6 +121,7 @@ def create_app() -> Flask:
                                     "OTEL_EXPORTER_OTLP_ENDPOINT": config.OTEL_EXPORTER_OTLP_ENDPOINT,
                                     "GRPC_PORT": str(config.GRPC_PORT),
                                 },
+                                ports=port_mappings,
                             )
                             yield f"data: {json.dumps({'step': i+1, 'total': len(slugs), 'slug': slug_str, 'status': 'started'})}\n\n"
                         except RuntimeError as e:
@@ -147,6 +160,7 @@ def create_app() -> Flask:
                                 "container_id": container_id,
                                 "envoy_container_id": envoy_container_id,
                                 "health_status": health_status,
+                                "port_mappings": port_mappings,
                             }
                         )
 
@@ -279,7 +293,7 @@ def create_app() -> Flask:
                             docker_ops.stop_container(name)
                             docker_ops.remove_container(name)
                             destroyed.append(name)
-                        except Exception as e:
+                        except Exception:
                             # Continue with other containers
                             pass
 

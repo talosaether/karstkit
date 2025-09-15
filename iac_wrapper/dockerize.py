@@ -6,7 +6,7 @@ import subprocess
 import time
 import requests
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List
 from jinja2 import Template
 from .config import config
 from .slug import RepoSlug
@@ -119,6 +119,10 @@ class DockerOps:
         # Add volume mounts
         for volume in kwargs.get("volumes", []):
             cmd.extend(["-v", volume])
+
+        # Add port mappings
+        for port_mapping in kwargs.get("ports", []):
+            cmd.extend(["-p", port_mapping])
 
         # Add the image name
         cmd.append(image_name)
@@ -416,3 +420,171 @@ class DockerOps:
             return None
         except Exception:
             return None
+
+    def detect_service_port(self, repo_path: Path, entrypoint: str) -> Optional[int]:
+        """Detect the web port used by a service by analyzing code patterns.
+
+        Args:
+            repo_path: Path to the repository
+            entrypoint: Service entrypoint command
+
+        Returns:
+            Detected port number or None if not found
+        """
+
+        # First try to detect from entrypoint patterns
+        if "port" in entrypoint.lower():
+            import re
+
+            port_match = re.search(r"port[=:\s]+(\d+)", entrypoint.lower())
+            if port_match:
+                port = int(port_match.group(1))
+                if 1000 <= port <= 65535:
+                    return port
+
+        # Search for common port patterns in Python files
+        for py_file in repo_path.rglob("*.py"):
+            try:
+                content = py_file.read_text(encoding="utf-8", errors="ignore")
+
+                # Look for Flask app.run patterns
+                import re
+
+                flask_patterns = [
+                    r"app\.run\([^)]*port\s*=\s*(\d+)",
+                    r'host\s*=\s*["\'][^"\']*["\']\s*,\s*port\s*=\s*(\d+)',
+                    r"port\s*=\s*(\d+)[^}]*\)",
+                ]
+
+                for pattern in flask_patterns:
+                    matches = re.findall(pattern, content)
+                    for match in matches:
+                        port = int(match)
+                        if 1000 <= port <= 65535:
+                            return port
+
+                # Look for PORT environment variable usage
+                env_patterns = [
+                    r'os\.environ\.get\(["\']PORT["\']\s*,\s*["\']?(\d+)',
+                    r'os\.getenv\(["\']PORT["\']\s*,\s*["\']?(\d+)',
+                ]
+
+                for pattern in env_patterns:
+                    matches = re.findall(pattern, content)
+                    for match in matches:
+                        port = int(match)
+                        if 1000 <= port <= 65535:
+                            return port
+
+            except Exception:
+                continue
+
+        # If no specific port found, check if it's a common framework
+        if any(framework in entrypoint.lower() for framework in ["flask", "django"]):
+            return 5000  # Default Flask port
+        elif any(
+            framework in entrypoint.lower() for framework in ["node", "npm", "yarn"]
+        ):
+            return 3000  # Default Node.js port
+
+        return None
+
+    def generate_port_mappings(
+        self, repo_path: Path, entrypoint: str, service_name: str
+    ) -> List[str]:
+        """Generate port mappings for a service.
+
+        Args:
+            repo_path: Path to the repository
+            entrypoint: Service entrypoint command
+            service_name: Name of the service
+
+        Returns:
+            List of port mapping strings in format "host_port:container_port"
+        """
+        port_mappings = []
+
+        # Detect the service's primary port
+        detected_port = self.detect_service_port(repo_path, entrypoint)
+
+        if detected_port:
+            # Map to the same port on host if available, or find next available
+            host_port = self._find_available_host_port(detected_port)
+            port_mappings.append(f"{host_port}:{detected_port}")
+
+        # Always expose common ports if they're different from detected port
+        common_web_ports = [5000, 8000, 8080, 3000, 4000, 9000]
+        for port in common_web_ports:
+            if port != detected_port:
+                # Only map if this port seems to be used by the service
+                if self._port_likely_used(repo_path, port):
+                    host_port = self._find_available_host_port(port)
+                    port_mappings.append(f"{host_port}:{port}")
+
+        return port_mappings
+
+    def _find_available_host_port(self, preferred_port: int) -> int:
+        """Find an available port on the host, starting with the preferred port.
+
+        Args:
+            preferred_port: The preferred port to use
+
+        Returns:
+            Available port number
+        """
+        import socket
+
+        # Try the preferred port first
+        if self._is_port_available(preferred_port):
+            return preferred_port
+
+        # Try ports in a range around the preferred port
+        for offset in range(1, 100):
+            for port in [preferred_port + offset, preferred_port - offset]:
+                if 1024 <= port <= 65535 and self._is_port_available(port):
+                    return port
+
+        # Fallback to a high port range
+        for port in range(8000, 9000):
+            if self._is_port_available(port):
+                return port
+
+        return preferred_port  # Fallback
+
+    def _is_port_available(self, port: int) -> bool:
+        """Check if a port is available on the host.
+
+        Args:
+            port: Port number to check
+
+        Returns:
+            True if port is available, False otherwise
+        """
+        import socket
+
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                sock.bind(("127.0.0.1", port))
+                return True
+        except OSError:
+            return False
+
+    def _port_likely_used(self, repo_path: Path, port: int) -> bool:
+        """Check if a port is likely used by the service.
+
+        Args:
+            repo_path: Path to the repository
+            port: Port number to check
+
+        Returns:
+            True if port is likely used
+        """
+        # Simple heuristic: search for the port number in Python files
+        for py_file in repo_path.rglob("*.py"):
+            try:
+                content = py_file.read_text(encoding="utf-8", errors="ignore")
+                if str(port) in content:
+                    return True
+            except Exception:
+                continue
+        return False

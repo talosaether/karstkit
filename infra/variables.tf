@@ -46,3 +46,38 @@ variable "secrets_path" {
   type        = string
   default     = "../secrets"
 }
+
+variable "expose_ports" {
+  description = "Map of common web ports to expose from containers to host"
+  type = map(object({
+    internal_port = number
+    external_port = number
+    protocol     = optional(string, "tcp")
+  }))
+  default = {
+    "flask_dev" = {
+      internal_port = 5000
+      external_port = 5000
+    }
+    "http_alt" = {
+      internal_port = 8000
+      external_port = 8000
+    }
+    "flask_admin" = {
+      internal_port = 8080
+      external_port = 8080
+    }
+    "node_dev" = {
+      internal_port = 3000
+      external_port = 3000
+    }
+    "alt_dev" = {
+      internal_port = 4000
+      external_port = 4000
+    }
+    "prometheus" = {
+      internal_port = 9000
+      external_port = 9000
+    }
+  }
+}

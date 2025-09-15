@@ -114,6 +114,13 @@ def deploy(file_path: Optional[str], slugs: tuple, wait: bool, timeout: int):
                 click.echo(f"  Configuring Envoy...")
                 envoy_config_content = envoy_config.generate_config(service_name)
 
+                click.echo(f"  Detecting and mapping ports...")
+                port_mappings = docker_ops.generate_port_mappings(
+                    repo_path, entrypoint, service_name
+                )
+                if port_mappings:
+                    click.echo(f"    Port mappings: {', '.join(port_mappings)}")
+
                 click.echo(f"  Starting containers (Envoy first, then app)...")
 
                 # Start service with Envoy in correct order (Envoy first, then app)
@@ -131,6 +138,7 @@ def deploy(file_path: Optional[str], slugs: tuple, wait: bool, timeout: int):
                             ),
                             "GRPC_PORT": str(config.GRPC_PORT),
                         },
+                        ports=port_mappings,
                     )
                     click.echo(f"  ✅ Service {service_name} started successfully")
                 except RuntimeError as e:
@@ -173,6 +181,7 @@ def deploy(file_path: Optional[str], slugs: tuple, wait: bool, timeout: int):
                         "health_status": health_status,
                         "app_ip": app_ip,
                         "envoy_ip": envoy_ip,
+                        "port_mappings": port_mappings,
                     }
                 )
 

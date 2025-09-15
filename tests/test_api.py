@@ -2,7 +2,7 @@
 
 import pytest
 import json
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 from flask import Flask
 from iac_wrapper.api import create_app
 
@@ -10,7 +10,11 @@ from iac_wrapper.api import create_app
 @pytest.fixture
 def app():
     """Create test Flask application."""
-    with patch("iac_wrapper.auth.create_auth_handler"):
+    # Create a proper mock auth handler
+    mock_auth_handler = Mock()
+    mock_auth_handler.require_auth = lambda f: f  # Return function unchanged (no auth)
+
+    with patch("iac_wrapper.auth.get_auth_handler", return_value=mock_auth_handler):
         test_app = create_app()
         test_app.config["TESTING"] = True
         return test_app
