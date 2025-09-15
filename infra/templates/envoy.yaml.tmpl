@@ -1,7 +1,7 @@
 admin:
   address:
     socket_address:
-      address: 127.0.0.1
+      address: 0.0.0.0
       port_value: {{ envoy_metrics_port | default(9901) }}
 
 static_resources:
@@ -58,11 +58,9 @@ static_resources:
             validation_context:
               trusted_ca:
                 filename: "/etc/envoy/certs/ca.crt"
-              verify_certificate_spki:
-              - "{{ service_name }}"
             alpn_protocols:
             - "h2"
-            require_client_certificate: true
+          require_client_certificate: true
 
   clusters:
   - name: app_service
@@ -94,7 +92,6 @@ static_resources:
               filename: "/etc/envoy/certs/ca.crt"
           alpn_protocols:
           - "h2"
-          require_client_certificate: true
 
   # Stats configuration
   - name: stats
