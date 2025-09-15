@@ -6,7 +6,7 @@ import tempfile
 import requests
 import subprocess
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional
 from .slug import RepoSlug
 
 
@@ -38,7 +38,8 @@ class GitOps:
                 return self._fetch_clone(slug)
             except Exception as clone_error:
                 raise RuntimeError(
-                    f"Failed to fetch repository {slug}: {e}, clone failed: {clone_error}"
+                    f"Failed to fetch repository {slug}: {e}, "
+                    f"clone failed: {clone_error}"
                 )
 
     def _fetch_archive(self, slug: RepoSlug) -> Path:
@@ -138,7 +139,7 @@ class GitOps:
                         data = tomllib.load(f)
                 except ImportError:
                     # Fallback to toml for older Python versions
-                    import toml
+                    import toml  # type: ignore
 
                     with open(pyproject_toml, "r") as f:
                         data = toml.load(f)
@@ -159,7 +160,7 @@ class GitOps:
                 with open(setup_py, "r") as f:
                     content = f.read()
                     if "entry_points" in content:
-                        # This is a simplified approach - in production you'd want proper parsing
+                        # Simplified approach - production would use proper parsing
                         return "main"
             except Exception:
                 pass
@@ -168,6 +169,11 @@ class GitOps:
         for item in repo_path.iterdir():
             if item.is_dir() and (item / "__main__.py").exists():
                 return f"{item.name}.main"
+
+        # Check for wsgi.py (Flask WSGI application)
+        wsgi_py = repo_path / "wsgi.py"
+        if wsgi_py.exists():
+            return "wsgi"
 
         # Check for app.py or app/main.py
         app_py = repo_path / "app.py"
@@ -190,19 +196,37 @@ class GitOps:
                 if item.is_dir() and (item / "__main__.py").exists():
                     return f"{item.name}.main"
 
-        # Check for any Python file with main function
+        # Check for any Python file with main function or Flask patterns
         for py_file in repo_path.glob("*.py"):
-            if py_file.name.startswith("main") or py_file.name.startswith("app"):
+            if (
+                py_file.name.startswith("main")
+                or py_file.name.startswith("app")
+                or py_file.name in ["run.py", "server.py", "wsgi.py"]
+            ):
                 try:
                     with open(py_file, "r") as f:
                         content = f.read()
                         if (
                             "def main(" in content
                             or 'if __name__ == "__main__"' in content
+                            or "create_app" in content  # Flask app factory pattern
+                            or "Flask(__name__)"
+                            in content  # Direct Flask instantiation
                         ):
                             return py_file.stem
                 except Exception:
                     continue
+
+        # Check for Flask app factory in app/ directory
+        app_init = repo_path / "app" / "__init__.py"
+        if app_init.exists():
+            try:
+                with open(app_init, "r") as f:
+                    content = f.read()
+                    if "create_app" in content or "Flask" in content:
+                        return "app:create_app"  # Flask app factory format
+            except Exception:
+                pass
 
         return None
 

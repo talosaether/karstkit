@@ -10,6 +10,7 @@
 # ✅ Python package structure
 
 # Production Flask Services (replace with your repositories)
+- gh:talosaether/dshbrd
 #- gh:your-org/flask-dashboard    # Web dashboard with monitoring endpoints
 #- gh:your-org/flask-api         # REST API with CRUD operations
 #- gh:your-org/flask-microservice # Lightweight service with gRPC
@@ -22,9 +23,9 @@
 # These will demonstrate the pipeline but fail at entrypoint detection
 
 # Demo repositories for testing (remove # to activate)
-- gh:miguelgrinberg/microblog           # Flask tutorial project
-- gh:requests/requests-oauthlib#master  # Python package structure
-- gh:pallets-eco/flask-wtf#main         # Flask ecosystem integration
+#- gh:miguelgrinberg/microblog           # Flask tutorial project
+#- gh:requests/requests-oauthlib#master  # Python package structure
+#- gh:pallets-eco/flask-wtf#main         # Flask ecosystem integration
 
 # ─────────────────────────────────────────────────────────────────
 # USAGE INSTRUCTIONS
