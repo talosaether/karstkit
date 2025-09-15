@@ -66,9 +66,11 @@ class TestFlaskAPI:
         mock_auth.return_value = auth_decorator
 
         # Mock deployment components
-        with patch("iac_wrapper.gitops.GitOps") as mock_gitops, patch(
-            "iac_wrapper.dockerize.DockerOps"
-        ) as mock_docker, patch("iac_wrapper.envoy.EnvoyConfig") as mock_envoy:
+        with (
+            patch("iac_wrapper.gitops.GitOps") as mock_gitops,
+            patch("iac_wrapper.dockerize.DockerOps") as mock_docker,
+            patch("iac_wrapper.envoy.EnvoyConfig") as mock_envoy,
+        ):
             # Setup mocks
             mock_git_instance = Mock()
             mock_git_instance.fetch_repo.return_value = "/tmp/repo"

@@ -91,11 +91,12 @@ def test_cli_complete_deployment_workflow(sample_flask_repo_yaml, temp_dir):
     print(f"   Repos file: {repos_yaml}")
 
     # Mock all the external dependencies
-    with patch("iac_wrapper.gitops.GitOps") as mock_gitops, patch(
-        "iac_wrapper.dockerize.DockerOps"
-    ) as mock_docker, patch("iac_wrapper.envoy.EnvoyConfig") as mock_envoy, patch(
-        "iac_wrapper.controlplane.HealthChecker"
-    ) as mock_health:
+    with (
+        patch("iac_wrapper.gitops.GitOps") as mock_gitops,
+        patch("iac_wrapper.dockerize.DockerOps") as mock_docker,
+        patch("iac_wrapper.envoy.EnvoyConfig") as mock_envoy,
+        patch("iac_wrapper.controlplane.HealthChecker") as mock_health,
+    ):
         # Setup GitOps mock
         mock_git_instance = MagicMock()
         mock_git_instance.fetch_repo.return_value = flask_app
@@ -229,9 +230,11 @@ def test_cli_help_and_version():
 @pytest.fixture
 def mock_successful_deployment():
     """Fixture that mocks a successful deployment for testing."""
-    with patch("iac_wrapper.gitops.GitOps") as mock_gitops, patch(
-        "iac_wrapper.dockerize.DockerOps"
-    ) as mock_docker, patch("iac_wrapper.envoy.EnvoyConfig") as mock_envoy:
+    with (
+        patch("iac_wrapper.gitops.GitOps") as mock_gitops,
+        patch("iac_wrapper.dockerize.DockerOps") as mock_docker,
+        patch("iac_wrapper.envoy.EnvoyConfig") as mock_envoy,
+    ):
         # Setup successful mocks
         mock_git_instance = MagicMock()
         mock_git_instance.fetch_repo.return_value = Path("/tmp/repo")

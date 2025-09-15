@@ -133,9 +133,10 @@ def mock_requests():
 @pytest.fixture
 def mock_grpc():
     """Mock gRPC operations."""
-    with patch("grpc.secure_channel") as mock_channel, patch(
-        "grpc.insecure_channel"
-    ) as mock_insecure:
+    with (
+        patch("grpc.secure_channel") as mock_channel,
+        patch("grpc.insecure_channel") as mock_insecure,
+    ):
         mock_channel.return_value.__enter__.return_value = Mock()
         mock_insecure.return_value.__enter__.return_value = Mock()
         yield mock_channel, mock_insecure

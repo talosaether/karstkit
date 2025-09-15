@@ -173,9 +173,11 @@ def deploy(file_path: Optional[str], slugs: tuple, wait: bool, timeout: int):
                 results.append(
                     {
                         "slug": slug_str,
-                        "service_name": slug_str.split(":")[1].split("/")[1]
-                        if ":" in slug_str
-                        else slug_str,
+                        "service_name": (
+                            slug_str.split(":")[1].split("/")[1]
+                            if ":" in slug_str
+                            else slug_str
+                        ),
                         "deployed": False,
                         "error": str(e),
                     }

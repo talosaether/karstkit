@@ -155,9 +155,11 @@ def create_app() -> Flask:
                         results.append(
                             {
                                 "slug": slug_str,
-                                "service_name": slug_str.split(":")[1].split("/")[1]
-                                if ":" in slug_str
-                                else slug_str,
+                                "service_name": (
+                                    slug_str.split(":")[1].split("/")[1]
+                                    if ":" in slug_str
+                                    else slug_str
+                                ),
                                 "deployed": False,
                                 "error": str(e),
                             }
@@ -188,9 +190,11 @@ def create_app() -> Flask:
                         services.append(
                             {
                                 "name": name,
-                                "status": "running"
-                                if docker_ops.container_running(name)
-                                else "stopped",
+                                "status": (
+                                    "running"
+                                    if docker_ops.container_running(name)
+                                    else "stopped"
+                                ),
                             }
                         )
 

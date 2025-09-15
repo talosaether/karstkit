@@ -74,11 +74,12 @@ class TestDeployCommand:
         test_file = temp_dir / "test.yaml"
         test_file.write_text("- gh:testuser/testrepo")
 
-        with patch("iac_wrapper.gitops.GitOps") as mock_git, patch(
-            "iac_wrapper.dockerize.DockerOps"
-        ) as mock_docker, patch("iac_wrapper.envoy.EnvoyConfig") as mock_envoy, patch(
-            "iac_wrapper.controlplane.HealthChecker"
-        ) as mock_health:
+        with (
+            patch("iac_wrapper.gitops.GitOps") as mock_git,
+            patch("iac_wrapper.dockerize.DockerOps") as mock_docker,
+            patch("iac_wrapper.envoy.EnvoyConfig") as mock_envoy,
+            patch("iac_wrapper.controlplane.HealthChecker") as mock_health,
+        ):
             # Setup mocks (similar to above)
             mock_git_instance = Mock()
             mock_git_instance.fetch_repo.return_value = "/tmp/repo"
@@ -158,11 +159,12 @@ class TestDeployCommand:
         test_data = {"slugs": ["gh:testuser/testrepo"]}
         test_file.write_text(json.dumps(test_data))
 
-        with patch("iac_wrapper.gitops.GitOps") as mock_git, patch(
-            "iac_wrapper.dockerize.DockerOps"
-        ) as mock_docker, patch("iac_wrapper.envoy.EnvoyConfig") as mock_envoy, patch(
-            "iac_wrapper.controlplane.HealthChecker"
-        ) as mock_health:
+        with (
+            patch("iac_wrapper.gitops.GitOps") as mock_git,
+            patch("iac_wrapper.dockerize.DockerOps") as mock_docker,
+            patch("iac_wrapper.envoy.EnvoyConfig") as mock_envoy,
+            patch("iac_wrapper.controlplane.HealthChecker") as mock_health,
+        ):
             # Setup mocks
             self._setup_successful_mocks(mock_git, mock_docker, mock_envoy, mock_health)
 
@@ -171,9 +173,11 @@ class TestDeployCommand:
 
     def test_deploy_no_wait(self, runner):
         """Test deploy command with --no-wait option."""
-        with patch("iac_wrapper.gitops.GitOps") as mock_git, patch(
-            "iac_wrapper.dockerize.DockerOps"
-        ) as mock_docker, patch("iac_wrapper.envoy.EnvoyConfig") as mock_envoy:
+        with (
+            patch("iac_wrapper.gitops.GitOps") as mock_git,
+            patch("iac_wrapper.dockerize.DockerOps") as mock_docker,
+            patch("iac_wrapper.envoy.EnvoyConfig") as mock_envoy,
+        ):
             # Setup mocks
             mock_git_instance = Mock()
             mock_git_instance.fetch_repo.return_value = "/tmp/repo"
