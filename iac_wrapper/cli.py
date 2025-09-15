@@ -170,6 +170,14 @@ def deploy(file_path: Optional[str], slugs: tuple, wait: bool, timeout: int):
                 app_ip = docker_ops.get_container_ip(service_name)
                 envoy_ip = docker_ops.get_container_ip(f"{service_name}-envoy")
 
+                # Generate access URLs for CLI display
+                access_urls = []
+                if port_mappings:
+                    host_ip = docker_ops.get_host_ip()
+                    for mapping in port_mappings:
+                        host_port = mapping.split(":")[0]
+                        access_urls.append(f"http://{host_ip}:{host_port}")
+
                 results.append(
                     {
                         "slug": slug_str,
@@ -182,6 +190,7 @@ def deploy(file_path: Optional[str], slugs: tuple, wait: bool, timeout: int):
                         "app_ip": app_ip,
                         "envoy_ip": envoy_ip,
                         "port_mappings": port_mappings,
+                        "access_urls": access_urls,
                     }
                 )
 
@@ -206,15 +215,35 @@ def deploy(file_path: Optional[str], slugs: tuple, wait: bool, timeout: int):
         click.echo(f"  Successful: {successful}/{len(results)}")
         click.echo(f"  Network: {config.DOCKER_NETWORK_NAME} (172.20.0.0/16)")
 
+        # Get host IP for access URLs
+        host_ip = docker_ops.get_host_ip()
+
         for result in results:
             status = "✓" if result.get("deployed", False) else "✗"
             click.echo(f"  {status} {result['slug']}")
             if result.get("deployed", False):
-                # Show IP addresses for successful deployments
+                service_name = result.get("service_name", "service")
+
+                # Show access URLs prominently
+                access_urls = result.get("access_urls", [])
+                if access_urls:
+                    click.echo(f"    🌐 {service_name} running at:")
+                    for url in access_urls:
+                        click.echo(f"      {url}")
+
+                # Show port mappings details
+                port_mappings = result.get("port_mappings", [])
+                if port_mappings:
+                    click.echo("    Port mappings:")
+                    for mapping in port_mappings:
+                        host_port, container_port = mapping.split(":")
+                        click.echo(f"      {host_port}→{container_port}")
+
+                # Show container IP addresses for internal access
                 if result.get("app_ip"):
-                    click.echo(f"    App IP: {result['app_ip']}")
+                    click.echo(f"    Internal App IP: {result['app_ip']}")
                 if result.get("envoy_ip"):
-                    click.echo(f"    Envoy IP: {result['envoy_ip']}")
+                    click.echo(f"    Internal Envoy IP: {result['envoy_ip']}")
             else:
                 click.echo(f"    Error: {result.get('error', 'Unknown error')}")
 

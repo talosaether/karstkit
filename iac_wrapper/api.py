@@ -62,10 +62,10 @@ def create_app() -> Flask:
                         service_name = slug.service_name
 
                         step_data = {
-                            'step': i+1,
-                            'total': len(slugs),
-                            'slug': slug_str,
-                            'status': 'parsing'
+                            "step": i + 1,
+                            "total": len(slugs),
+                            "slug": slug_str,
+                            "status": "parsing",
                         }
                         yield f"data: {json.dumps(step_data)}\n\n"
 
@@ -151,6 +151,14 @@ def create_app() -> Flask:
 
                         yield f"data: {json.dumps({'step': i+1, 'total': len(slugs), 'slug': slug_str, 'status': 'completed'})}\n\n"
 
+                        # Generate access URLs
+                        access_urls = []
+                        if port_mappings:
+                            host_ip = docker_ops.get_host_ip()
+                            for mapping in port_mappings:
+                                host_port = mapping.split(":")[0]
+                                access_urls.append(f"http://{host_ip}:{host_port}")
+
                         results.append(
                             {
                                 "slug": slug_str,
@@ -161,6 +169,7 @@ def create_app() -> Flask:
                                 "envoy_container_id": envoy_container_id,
                                 "health_status": health_status,
                                 "port_mappings": port_mappings,
+                                "access_urls": access_urls,
                             }
                         )
 

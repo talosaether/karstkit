@@ -588,3 +588,35 @@ class DockerOps:
             except Exception:
                 continue
         return False
+
+    def get_host_ip(self) -> str:
+        """Get the host IP address for external access.
+
+        Returns:
+            Host IP address or 'localhost' as fallback
+        """
+        import subprocess
+
+        try:
+            # Try to get primary interface IP via routing table
+            result = subprocess.run(
+                ["ip", "route", "get", "8.8.8.8"],
+                capture_output=True, text=True, timeout=2
+            )
+            if result.returncode == 0:
+                return result.stdout.split()[6]
+        except Exception:
+            pass
+
+        try:
+            # Fallback to hostname -I
+            result = subprocess.run(
+                ["hostname", "-I"],
+                capture_output=True, text=True, timeout=2
+            )
+            if result.returncode == 0:
+                return result.stdout.strip().split()[0]
+        except Exception:
+            pass
+
+        return "localhost"
