@@ -126,7 +126,9 @@ def deploy(file_path: Optional[str], slugs: tuple, wait: bool, timeout: int):
                         service_name,
                         envoy_config_content,
                         environment={
-                            "OTEL_EXPORTER_OTLP_ENDPOINT": config.OTEL_EXPORTER_OTLP_ENDPOINT,
+                            "OTEL_EXPORTER_OTLP_ENDPOINT": (
+                                config.OTEL_EXPORTER_OTLP_ENDPOINT
+                            ),
                             "GRPC_PORT": str(config.GRPC_PORT),
                         },
                     )
@@ -156,6 +158,10 @@ def deploy(file_path: Optional[str], slugs: tuple, wait: bool, timeout: int):
 
                 click.echo(f"  ✓ Deployed successfully")
 
+                # Get container IP addresses
+                app_ip = docker_ops.get_container_ip(service_name)
+                envoy_ip = docker_ops.get_container_ip(f"{service_name}-envoy")
+
                 results.append(
                     {
                         "slug": slug_str,
@@ -165,6 +171,8 @@ def deploy(file_path: Optional[str], slugs: tuple, wait: bool, timeout: int):
                         "container_id": container_id,
                         "envoy_container_id": envoy_container_id,
                         "health_status": health_status,
+                        "app_ip": app_ip,
+                        "envoy_ip": envoy_ip,
                     }
                 )
 
@@ -187,11 +195,18 @@ def deploy(file_path: Optional[str], slugs: tuple, wait: bool, timeout: int):
         click.echo("\nDeployment Summary:")
         successful = sum(1 for r in results if r.get("deployed", False))
         click.echo(f"  Successful: {successful}/{len(results)}")
+        click.echo(f"  Network: {config.DOCKER_NETWORK_NAME} (172.20.0.0/16)")
 
         for result in results:
             status = "✓" if result.get("deployed", False) else "✗"
             click.echo(f"  {status} {result['slug']}")
-            if not result.get("deployed", False):
+            if result.get("deployed", False):
+                # Show IP addresses for successful deployments
+                if result.get("app_ip"):
+                    click.echo(f"    App IP: {result['app_ip']}")
+                if result.get("envoy_ip"):
+                    click.echo(f"    Envoy IP: {result['envoy_ip']}")
+            else:
                 click.echo(f"    Error: {result.get('error', 'Unknown error')}")
 
         if successful < len(results):
@@ -316,7 +331,6 @@ def health(service: Optional[str]):
 
         else:
             # Check all services
-            docker_ops = DockerOps()
             cmd = ["docker", "ps", "--filter", "name=iac-", "--format", "{{.Names}}"]
             result = subprocess.run(cmd, capture_output=True, text=True)
 

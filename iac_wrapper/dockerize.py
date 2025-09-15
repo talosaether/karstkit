@@ -144,55 +144,64 @@ class DockerOps:
             f.write(envoy_config)
             config_path = f.name
 
-        try:
-            # Get certificate paths
-            from .envoy import EnvoyConfig
+        # Make config file readable by container (Docker may run as different user)
+        os.chmod(config_path, 0o644)
 
-            envoy_ops = EnvoyConfig()
-            cert_paths = envoy_ops.get_certificate_paths(service_name)
+        # Get certificate paths
+        from .envoy import EnvoyConfig
 
-            # Run Envoy container
-            cmd = [
-                "docker",
-                "run",
-                "-d",  # Detached mode
-                "--name",
-                f"{service_name}-envoy",
-                "--network",
-                config.DOCKER_NETWORK_NAME,
-                "--restart",
-                "unless-stopped",
-                "-v",
-                f"{config_path}:/etc/envoy/envoy.yaml:ro",
-                "-v",
-                f"{cert_paths['ca_cert']}:/etc/envoy/certs/ca.crt:ro",
-                "-v",
-                f"{cert_paths['service_cert']}:/etc/envoy/certs/tls.crt:ro",
-                "-v",
-                f"{cert_paths['service_key']}:/etc/envoy/certs/tls.key:ro",
-                "-p",
-                f"{config.ENVOY_INBOUND_PORT}:{config.ENVOY_INBOUND_PORT}",
-                "-p",
-                f"{config.ENVOY_METRICS_PORT}:{config.ENVOY_METRICS_PORT}",
-                "envoyproxy/envoy:v1.28-latest",
-                "/usr/local/bin/envoy",
-                "-c",
-                "/etc/envoy/envoy.yaml",
-                "--service-cluster",
-                service_name,
-                "--service-node",
-                f"{service_name}-node",
-            ]
+        envoy_ops = EnvoyConfig()
+        cert_paths = envoy_ops.get_certificate_paths(service_name)
 
-            result = subprocess.run(cmd, capture_output=True, text=True)
-            if result.returncode != 0:
-                raise RuntimeError(f"Envoy container run failed: {result.stderr}")
+        # Run Envoy container
+        cmd = [
+            "docker",
+            "run",
+            "-d",  # Detached mode
+            "--name",
+            f"{service_name}-envoy",
+            "--network",
+            config.DOCKER_NETWORK_NAME,
+            "--restart",
+            "unless-stopped",
+            "-v",
+            f"{config_path}:/etc/envoy/envoy.yaml:ro",
+            "-v",
+            f"{cert_paths['ca_cert']}:/etc/envoy/certs/ca.crt:ro",
+            "-v",
+            f"{cert_paths['service_cert']}:/etc/envoy/certs/tls.crt:ro",
+            "-v",
+            f"{cert_paths['service_key']}:/etc/envoy/certs/tls.key:ro",
+            "-p",
+            f"{config.ENVOY_INBOUND_PORT}:{config.ENVOY_INBOUND_PORT}",
+            "-p",
+            f"{config.ENVOY_METRICS_PORT}:{config.ENVOY_METRICS_PORT}",
+            "envoyproxy/envoy:v1.28-latest",
+            "/usr/local/bin/envoy",
+            "-c",
+            "/etc/envoy/envoy.yaml",
+            "--service-cluster",
+            service_name,
+            "--service-node",
+            f"{service_name}-node",
+        ]
 
-            return result.stdout.strip()
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            # Clean up config file on failure
+            try:
+                os.unlink(config_path)
+            except OSError:
+                pass
+            raise RuntimeError(f"Envoy container run failed: {result.stderr}")
 
-        finally:
-            # Clean up temporary config file
-            os.unlink(config_path)
+        # Store config path for later cleanup
+        container_id = result.stdout.strip()
+        if not hasattr(self, "_envoy_config_files"):
+            self._envoy_config_files = {}
+        self._envoy_config_files[f"{service_name}-envoy"] = config_path
+
+        return container_id
 
     def stop_container(self, container_name: str) -> None:
         """Stop a Docker container.
@@ -211,6 +220,17 @@ class DockerOps:
         """
         cmd = ["docker", "rm", container_name]
         subprocess.run(cmd, capture_output=True, text=True)
+
+        # Clean up temporary config file if this is an Envoy container
+        if (
+            hasattr(self, "_envoy_config_files")
+            and container_name in self._envoy_config_files
+        ):
+            try:
+                os.unlink(self._envoy_config_files[container_name])
+            except OSError:
+                pass
+            del self._envoy_config_files[container_name]
 
     def get_container_logs(self, container_name: str, tail: int = 100) -> str:
         """Get container logs.
@@ -371,3 +391,28 @@ class DockerOps:
             self.stop_container(f"{service_name}-envoy")
             self.remove_container(f"{service_name}-envoy")
             raise e
+
+    def get_container_ip(self, container_name: str) -> Optional[str]:
+        """Get the IP address of a container.
+
+        Args:
+            container_name: Name of the container
+
+        Returns:
+            IP address of the container, or None if not found
+        """
+        try:
+            cmd = [
+                "docker",
+                "inspect",
+                "-f",
+                "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}",
+                container_name,
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            if result.returncode == 0:
+                ip = result.stdout.strip()
+                return ip if ip else None
+            return None
+        except Exception:
+            return None
