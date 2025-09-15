@@ -479,13 +479,35 @@ class DockerOps:
             except Exception:
                 continue
 
-        # If no specific port found, check if it's a common framework
-        if any(framework in entrypoint.lower() for framework in ["flask", "django"]):
+        # If no specific port found, check if it's a common framework or deployment pattern
+        entrypoint_lower = entrypoint.lower()
+
+        # Check for web frameworks and deployment patterns
+        if any(framework in entrypoint_lower for framework in ["flask", "django"]):
             return 5000  # Default Flask port
-        elif any(
-            framework in entrypoint.lower() for framework in ["node", "npm", "yarn"]
-        ):
+        elif any(framework in entrypoint_lower for framework in ["node", "npm", "yarn"]):
             return 3000  # Default Node.js port
+        elif any(server in entrypoint_lower for server in ["gunicorn", "uvicorn", "waitress"]):
+            return 8000  # Common WSGI/ASGI server default
+        elif any(server in entrypoint_lower for server in ["streamlit"]):
+            return 8501  # Streamlit default
+        elif any(server in entrypoint_lower for server in ["dash"]):
+            return 8050  # Dash default
+        elif any(server in entrypoint_lower for server in ["fastapi"]):
+            return 8000  # FastAPI common default
+        elif "python" in entrypoint_lower and any(py_file.name.endswith('.py') for py_file in repo_path.rglob("*.py")):
+            # For Python apps without explicit framework detection, check if it's likely a web app
+            for py_file in repo_path.rglob("*.py"):
+                try:
+                    content = py_file.read_text(encoding='utf-8', errors='ignore')
+                    # Look for web framework imports
+                    if any(framework in content.lower() for framework in [
+                        'flask', 'django', 'fastapi', 'starlette', 'tornado',
+                        'bottle', 'cherrypy', 'pyramid', 'streamlit', 'dash'
+                    ]):
+                        return 8000  # Generic web app default
+                except Exception:
+                    continue
 
         return None
 
@@ -520,6 +542,12 @@ class DockerOps:
                 if self._port_likely_used(repo_path, port):
                     host_port = self._find_available_host_port(port)
                     port_mappings.append(f"{host_port}:{port}")
+
+        # If no ports detected at all but this seems like a web application, add default mapping
+        if not port_mappings and self._is_likely_web_app(repo_path, entrypoint):
+            # Default to port 8000 for web applications without explicit port configuration
+            host_port = self._find_available_host_port(8000)
+            port_mappings.append(f"{host_port}:8000")
 
         return port_mappings
 
@@ -620,3 +648,52 @@ class DockerOps:
             pass
 
         return "localhost"
+
+    def _is_likely_web_app(self, repo_path: Path, entrypoint: str) -> bool:
+        """Check if this repository likely contains a web application.
+
+        Args:
+            repo_path: Path to the repository
+            entrypoint: Service entrypoint command
+
+        Returns:
+            True if this seems to be a web application
+        """
+        entrypoint_lower = entrypoint.lower()
+
+        # Check for web-related keywords in entrypoint
+        web_keywords = [
+            'server', 'serve', 'web', 'http', 'api', 'app', 'wsgi', 'asgi',
+            'gunicorn', 'uvicorn', 'waitress', 'flask', 'django', 'fastapi'
+        ]
+        if any(keyword in entrypoint_lower for keyword in web_keywords):
+            return True
+
+        # Check for web framework files/imports
+        web_files = ['requirements.txt', 'pyproject.toml', 'package.json', 'Pipfile']
+        web_frameworks = [
+            'flask', 'django', 'fastapi', 'starlette', 'tornado', 'bottle',
+            'cherrypy', 'pyramid', 'streamlit', 'dash', 'express', 'next',
+            'react', 'vue', 'angular', 'svelte'
+        ]
+
+        for web_file in web_files:
+            file_path = repo_path / web_file
+            if file_path.exists():
+                try:
+                    content = file_path.read_text(encoding='utf-8', errors='ignore')
+                    if any(framework in content.lower() for framework in web_frameworks):
+                        return True
+                except Exception:
+                    continue
+
+        # Check Python files for web framework imports
+        for py_file in repo_path.rglob("*.py"):
+            try:
+                content = py_file.read_text(encoding='utf-8', errors='ignore')
+                if any(framework in content.lower() for framework in web_frameworks):
+                    return True
+            except Exception:
+                continue
+
+        return False
