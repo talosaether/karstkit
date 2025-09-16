@@ -18,8 +18,9 @@ sudo apt-get install -y build-essential libssl-dev libffi-dev python3-dev
 
 ```bash
 # One-command setup and deployment
-cp .env.example .env
+cp env.example .env
 make bootstrap
+source venv/bin/activate
 make plan && make apply
 iac deploy --file repos.yaml
 ```
@@ -181,9 +182,11 @@ KarstKit is built with a modular, test-driven architecture:
 │   ├── api.py                     # Flask admin API
 │   └── cli.py                     # Command-line interface
 └── tests/
-    ├── conftest.py                # Pytest fixtures and configuration
-    ├── test_*.py                  # Comprehensive test suite (131+ tests)
-    └── test_integration_deploy.py # End-to-end deployment tests
+    ├── conftest.py                       # Pytest fixtures and configuration
+    ├── test_*.py                         # Comprehensive test suite (131+ tests)
+    ├── test_integration_deploy.py        # End-to-end deployment tests
+    ├── test_e2e_deployment_pipeline.py   # Complete E2E pipeline validation
+    └── E2E_DEPLOYMENT_TEST.md            # E2E test documentation
 ```
 
 ### Service Mesh Architecture
@@ -219,6 +222,9 @@ make test-cov
 pytest -m "not slow"              # Skip slow tests
 pytest -m integration             # Integration tests only
 pytest tests/test_slug.py -v      # Specific component tests
+
+# Run end-to-end deployment pipeline test
+make e2e-test                     # Complete deployment validation
 ```
 
 ### Quality Tools
@@ -247,6 +253,9 @@ make lint
 
 # Run tests
 make test
+
+# Run end-to-end deployment test
+make e2e-test
 
 # Infrastructure commands
 make plan          # Show Terraform plan
@@ -282,9 +291,32 @@ OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317  # Optional
 - **Envoy Metrics**: 9901
 - **Admin API**: 8080
 
+## 🔄 CI/CD Pipeline
+
+KarstKit includes automated testing and deployment validation:
+
+### GitHub Actions Workflows
+
+- **End-to-End Deployment Test**: Validates complete deployment pipeline
+  - Runs on pushes to main/develop branches
+  - Daily scheduled runs to catch regressions
+  - Tests full deployment workflow for `gh:talosaether/dshbrd`
+  - Validates service mesh, health checks, and cleanup
+
+### Running CI/CD Locally
+
+```bash
+# Run the same E2E test that runs in CI
+make e2e-test
+
+# Run with CI-friendly output
+make e2e-test-ci
+```
+
 ## 📚 Documentation
 
 - **`CLAUDE.md`**: Comprehensive development guide for AI code assistants
 - **`README.md`**: This overview and usage guide
+- **`tests/E2E_DEPLOYMENT_TEST.md`**: Complete E2E testing documentation
 - **Inline Documentation**: Extensive docstrings and type hints throughout codebase
 - **Test Examples**: Tests serve as living documentation of component behavior
