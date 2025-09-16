@@ -173,7 +173,23 @@ class GitOps:
         # Check for wsgi.py (Flask WSGI application)
         wsgi_py = repo_path / "wsgi.py"
         if wsgi_py.exists():
-            return "wsgi"
+            try:
+                with open(wsgi_py, "r") as f:
+                    content = f.read()
+                    # For Flask WSGI apps, we need to run the server, not just import
+                    if "app = " in content:
+                        return 'import wsgi; wsgi.app.run(host="0.0.0.0", port=5000, debug=True)'
+                    elif "application = " in content:
+                        return 'import wsgi; wsgi.application.run(host="0.0.0.0", port=5000, debug=True)'
+                    elif "create_app" in content:
+                        return 'import wsgi; wsgi.create_app().run(host="0.0.0.0", port=5000, debug=True)'
+                    else:
+                        # Fallback
+                        return 'import wsgi; wsgi.app.run(host="0.0.0.0", port=5000, debug=True)'
+            except Exception:
+                return (
+                    'import wsgi; wsgi.app.run(host="0.0.0.0", port=5000, debug=True)'
+                )
 
         # Check for app.py or app/main.py
         app_py = repo_path / "app.py"

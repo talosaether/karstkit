@@ -61,3 +61,9 @@ dev: ## Start development server
 
 install: ## Install the package in development mode
 	pip install -e .
+
+e2e-test: ## Run end-to-end deployment pipeline test
+	python tests/test_e2e_deployment_pipeline.py
+
+e2e-test-ci: ## Run e2e test with CI-friendly output
+	python tests/test_e2e_deployment_pipeline.py 2>&1 | tee e2e-test.log

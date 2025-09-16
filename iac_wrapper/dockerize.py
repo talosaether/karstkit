@@ -479,15 +479,20 @@ class DockerOps:
             except Exception:
                 continue
 
-        # If no specific port found, check if it's a common framework or deployment pattern
+        # If no specific port found, check if it's a common framework
+        # or deployment pattern
         entrypoint_lower = entrypoint.lower()
 
         # Check for web frameworks and deployment patterns
         if any(framework in entrypoint_lower for framework in ["flask", "django"]):
             return 5000  # Default Flask port
-        elif any(framework in entrypoint_lower for framework in ["node", "npm", "yarn"]):
+        elif any(
+            framework in entrypoint_lower for framework in ["node", "npm", "yarn"]
+        ):
             return 3000  # Default Node.js port
-        elif any(server in entrypoint_lower for server in ["gunicorn", "uvicorn", "waitress"]):
+        elif any(
+            server in entrypoint_lower for server in ["gunicorn", "uvicorn", "waitress"]
+        ):
             return 8000  # Common WSGI/ASGI server default
         elif any(server in entrypoint_lower for server in ["streamlit"]):
             return 8501  # Streamlit default
@@ -495,16 +500,30 @@ class DockerOps:
             return 8050  # Dash default
         elif any(server in entrypoint_lower for server in ["fastapi"]):
             return 8000  # FastAPI common default
-        elif "python" in entrypoint_lower and any(py_file.name.endswith('.py') for py_file in repo_path.rglob("*.py")):
-            # For Python apps without explicit framework detection, check if it's likely a web app
+        elif "python" in entrypoint_lower and any(
+            py_file.name.endswith(".py") for py_file in repo_path.rglob("*.py")
+        ):
+            # For Python apps without explicit framework detection,
+            # check if it's likely a web app
             for py_file in repo_path.rglob("*.py"):
                 try:
-                    content = py_file.read_text(encoding='utf-8', errors='ignore')
+                    content = py_file.read_text(encoding="utf-8", errors="ignore")
                     # Look for web framework imports
-                    if any(framework in content.lower() for framework in [
-                        'flask', 'django', 'fastapi', 'starlette', 'tornado',
-                        'bottle', 'cherrypy', 'pyramid', 'streamlit', 'dash'
-                    ]):
+                    if any(
+                        framework in content.lower()
+                        for framework in [
+                            "flask",
+                            "django",
+                            "fastapi",
+                            "starlette",
+                            "tornado",
+                            "bottle",
+                            "cherrypy",
+                            "pyramid",
+                            "streamlit",
+                            "dash",
+                        ]
+                    ):
                         return 8000  # Generic web app default
                 except Exception:
                     continue
@@ -534,18 +553,23 @@ class DockerOps:
             host_port = self._find_available_host_port(detected_port)
             port_mappings.append(f"{host_port}:{detected_port}")
 
-        # Always expose common ports if they're different from detected port
-        common_web_ports = [5000, 8000, 8080, 3000, 4000, 9000]
-        for port in common_web_ports:
-            if port != detected_port:
-                # Only map if this port seems to be used by the service
-                if self._port_likely_used(repo_path, port):
-                    host_port = self._find_available_host_port(port)
-                    port_mappings.append(f"{host_port}:{port}")
+        # Only map additional ports if there's strong evidence they're actually used
+        # (not just mentioned in documentation or comments)
+        if detected_port:
+            # Check for additional ports only if they appear in actual
+            # configuration patterns
+            additional_ports = self._detect_additional_ports(
+                repo_path, entrypoint, detected_port
+            )
+            for port in additional_ports:
+                host_port = self._find_available_host_port(port)
+                port_mappings.append(f"{host_port}:{port}")
 
-        # If no ports detected at all but this seems like a web application, add default mapping
+        # If no ports detected at all but this seems like a web application,
+        # add default mapping
         if not port_mappings and self._is_likely_web_app(repo_path, entrypoint):
-            # Default to port 8000 for web applications without explicit port configuration
+            # Default to port 8000 for web applications without explicit
+            # port configuration
             host_port = self._find_available_host_port(8000)
             port_mappings.append(f"{host_port}:8000")
 
@@ -560,8 +584,6 @@ class DockerOps:
         Returns:
             Available port number
         """
-        import socket
-
         # Try the preferred port first
         if self._is_port_available(preferred_port):
             return preferred_port
@@ -607,14 +629,126 @@ class DockerOps:
         Returns:
             True if port is likely used
         """
-        # Simple heuristic: search for the port number in Python files
+        import re
+
+        # Look for actual port usage patterns, not just mentions
+        port_patterns = [
+            rf"port\s*=\s*{port}\b",  # port=5000
+            rf":{port}\b",  # :5000 (in URLs or host:port)
+            rf"--port\s+{port}\b",  # --port 5000
+            rf"PORT\s*=\s*{port}\b",  # PORT=5000
+            rf"listen.*{port}\b",  # listen on port
+            rf"bind.*{port}\b",  # bind to port
+        ]
+
         for py_file in repo_path.rglob("*.py"):
             try:
                 content = py_file.read_text(encoding="utf-8", errors="ignore")
-                if str(port) in content:
-                    return True
+                # Skip if this looks like documentation/comments
+                lines = content.split("\n")
+                for line in lines:
+                    # Skip comment lines and docstrings
+                    stripped = line.strip()
+                    if (
+                        stripped.startswith("#")
+                        or '"""' in stripped
+                        or "'''" in stripped
+                    ):
+                        continue
+
+                    # Check for actual port usage patterns
+                    for pattern in port_patterns:
+                        if re.search(pattern, line, re.IGNORECASE):
+                            return True
             except Exception:
                 continue
+
+        # Also check configuration files
+        config_files = ["*.yml", "*.yaml", "*.json", "*.toml", "*.cfg", "*.ini"]
+        for pattern in config_files:
+            for config_file in repo_path.rglob(pattern):
+                try:
+                    content = config_file.read_text(encoding="utf-8", errors="ignore")
+                    for port_pattern in port_patterns:
+                        if re.search(port_pattern, content, re.IGNORECASE):
+                            return True
+                except Exception:
+                    continue
+
+        return False
+
+    def _detect_additional_ports(
+        self, repo_path: Path, entrypoint: str, primary_port: int
+    ) -> list[int]:
+        """Detect additional ports that are actually configured/used by the service.
+
+        Args:
+            repo_path: Path to the repository
+            entrypoint: Service entrypoint command
+            primary_port: Already detected primary port
+
+        Returns:
+            List of additional port numbers that should be mapped
+        """
+        additional_ports = []
+
+        # Common web ports to check, but only if they have strong evidence
+        candidate_ports = [3000, 4000, 5000, 8000, 8080, 9000]
+
+        for port in candidate_ports:
+            if port != primary_port:
+                # Only add if there's strong evidence this port is actually used
+                if self._port_likely_used(repo_path, port):
+                    # Additional validation: check if it's in Dockerfile EXPOSE
+                    # or docker-compose
+                    if self._port_in_container_config(repo_path, port):
+                        additional_ports.append(port)
+
+        return additional_ports
+
+    def _port_in_container_config(self, repo_path: Path, port: int) -> bool:
+        """Check if port is explicitly configured in container configuration.
+
+        Args:
+            repo_path: Path to the repository
+            port: Port number to check
+
+        Returns:
+            True if port is found in Dockerfile EXPOSE or docker-compose ports
+        """
+        import re
+
+        # Check Dockerfile for EXPOSE statements
+        dockerfile_paths = ["Dockerfile", "dockerfile", "Dockerfile.*"]
+        for pattern in dockerfile_paths:
+            for dockerfile in repo_path.rglob(pattern):
+                try:
+                    content = dockerfile.read_text(encoding="utf-8", errors="ignore")
+                    if re.search(rf"EXPOSE\s+{port}\b", content, re.IGNORECASE):
+                        return True
+                except Exception:
+                    continue
+
+        # Check docker-compose for port mappings
+        compose_files = [
+            "docker-compose.yml",
+            "docker-compose.yaml",
+            "compose.yml",
+            "compose.yaml",
+        ]
+        for compose_file in compose_files:
+            compose_path = repo_path / compose_file
+            if compose_path.exists():
+                try:
+                    content = compose_path.read_text(encoding="utf-8", errors="ignore")
+                    # Look for port mappings like "8000:8000" or "- 8000"
+                    if re.search(rf'["\']?{port}:{port}["\']?', content) or re.search(
+                        rf'^\s*-\s+["\']?{port}["\']?\s*$', content, re.MULTILINE
+                    ):
+                        return True
+                except Exception:
+                    continue
+
         return False
 
     def get_host_ip(self) -> str:
@@ -629,7 +763,9 @@ class DockerOps:
             # Try to get primary interface IP via routing table
             result = subprocess.run(
                 ["ip", "route", "get", "8.8.8.8"],
-                capture_output=True, text=True, timeout=2
+                capture_output=True,
+                text=True,
+                timeout=2,
             )
             if result.returncode == 0:
                 return result.stdout.split()[6]
@@ -639,8 +775,7 @@ class DockerOps:
         try:
             # Fallback to hostname -I
             result = subprocess.run(
-                ["hostname", "-I"],
-                capture_output=True, text=True, timeout=2
+                ["hostname", "-I"], capture_output=True, text=True, timeout=2
             )
             if result.returncode == 0:
                 return result.stdout.strip().split()[0]
@@ -663,26 +798,53 @@ class DockerOps:
 
         # Check for web-related keywords in entrypoint
         web_keywords = [
-            'server', 'serve', 'web', 'http', 'api', 'app', 'wsgi', 'asgi',
-            'gunicorn', 'uvicorn', 'waitress', 'flask', 'django', 'fastapi'
+            "server",
+            "serve",
+            "web",
+            "http",
+            "api",
+            "app",
+            "wsgi",
+            "asgi",
+            "gunicorn",
+            "uvicorn",
+            "waitress",
+            "flask",
+            "django",
+            "fastapi",
         ]
         if any(keyword in entrypoint_lower for keyword in web_keywords):
             return True
 
         # Check for web framework files/imports
-        web_files = ['requirements.txt', 'pyproject.toml', 'package.json', 'Pipfile']
+        web_files = ["requirements.txt", "pyproject.toml", "package.json", "Pipfile"]
         web_frameworks = [
-            'flask', 'django', 'fastapi', 'starlette', 'tornado', 'bottle',
-            'cherrypy', 'pyramid', 'streamlit', 'dash', 'express', 'next',
-            'react', 'vue', 'angular', 'svelte'
+            "flask",
+            "django",
+            "fastapi",
+            "starlette",
+            "tornado",
+            "bottle",
+            "cherrypy",
+            "pyramid",
+            "streamlit",
+            "dash",
+            "express",
+            "next",
+            "react",
+            "vue",
+            "angular",
+            "svelte",
         ]
 
         for web_file in web_files:
             file_path = repo_path / web_file
             if file_path.exists():
                 try:
-                    content = file_path.read_text(encoding='utf-8', errors='ignore')
-                    if any(framework in content.lower() for framework in web_frameworks):
+                    content = file_path.read_text(encoding="utf-8", errors="ignore")
+                    if any(
+                        framework in content.lower() for framework in web_frameworks
+                    ):
                         return True
                 except Exception:
                     continue
@@ -690,7 +852,7 @@ class DockerOps:
         # Check Python files for web framework imports
         for py_file in repo_path.rglob("*.py"):
             try:
-                content = py_file.read_text(encoding='utf-8', errors='ignore')
+                content = py_file.read_text(encoding="utf-8", errors="ignore")
                 if any(framework in content.lower() for framework in web_frameworks):
                     return True
             except Exception:
